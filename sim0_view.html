@@ -1,0 +1,367 @@
+ <!DOCTYPE html>
+<html>
+<head>
+	<meta content="text/html;charset=utf-8" http-equiv="Content-Type">
+	<meta content="utf-8" http-equiv="encoding">
+</head>
+<body>
+	<canvas style="background: black;" id="c" width=720 height=720></canvas>
+</body>
+
+<hr>
+
+<div id="stats">
+	<canvas style="background: black;" id="vision" width=64 height=16></canvas>
+	<br>
+	Mass: <span id="mass">0</span>
+	<br>
+	<button id="restart">Restart</button>
+
+</div>
+<script src="https://webgl2fundamentals.org/webgl/resources/webgl-utils.js"></script>
+<script src="https://webgl2fundamentals.org/webgl/resources/webgl-lessons-helper.js"></script>
+
+<script>
+"use strict";
+
+var vertexShaderSource = `#version 300 es
+
+// an attribute is an input (in) to a vertex shader.
+// It will receive data from a buffer
+in vec2 a_position;
+in vec2 a_uv;
+
+uniform vec2 u_resolution;
+uniform vec2 u_translation;
+uniform float u_scale;
+
+out vec2 f_uv;
+
+// all shaders have a main function
+void main() {
+	f_uv = a_uv;
+	// convert the position from pixels to 0.0 to 1.0
+	vec2 zeroToOne = ((a_position*u_scale)+u_translation) / u_resolution;
+	//vec2 zeroToOne = a_position*u_scale+u_translation;
+
+	// convert from 0->1 to 0->2
+	vec2 zeroToTwo = zeroToOne * 2.0;
+
+	// convert from 0->2 to -1->+1 (clipspace)
+	vec2 clipSpace = zeroToTwo - 1.0;
+
+   gl_Position = vec4(clipSpace * vec2(1, -1), 0, 1);
+}
+`;
+
+var fragmentShaderSource = `#version 300 es
+
+// fragment shaders don't have a default precision so we need
+// to pick one. mediump is a good default. It means "medium precision"
+precision mediump float;
+
+in vec2 f_uv;
+
+uniform vec4 u_color;
+
+out vec4 outColor;
+
+void main() {
+	vec2 norm_uv = (f_uv-  vec2(0.5) )*2.0;
+	if ( length(norm_uv) <= 1.0 ) outColor = u_color;
+
+	else outColor = vec4(0.0, 0.0, 0.0, 0.0);
+	//outColor = vec4(f_uv.x, f_uv.y, u_color.x+u_color.y+u_color.z, 1.0);
+	//outColor = u_color;
+}
+`;
+
+function createShader(gl, type, source) {
+	var shader = gl.createShader(type);
+	gl.shaderSource(shader, source);
+	gl.compileShader(shader);
+	var success = gl.getShaderParameter(shader, gl.COMPILE_STATUS);
+	if (success) {
+		return shader;
+	}
+
+	console.log(gl.getShaderInfoLog(shader));  // eslint-disable-line
+	gl.deleteShader(shader);
+	return undefined;
+}
+
+function createProgram(gl, vertexShader, fragmentShader) {
+	var program = gl.createProgram();
+	gl.attachShader(program, vertexShader);
+	gl.attachShader(program, fragmentShader);
+	gl.linkProgram(program);
+	var success = gl.getProgramParameter(program, gl.LINK_STATUS);
+	if (success) {
+		return program;
+	}
+
+	console.log(gl.getProgramInfoLog(program));  // eslint-disable-line
+	gl.deleteProgram(program);
+	return undefined;
+}
+
+// ----------------------------------------------------------------
+// LOGIC FUNCTION
+// ----------------------------------------------------------------
+class Creature {
+  constructor(position, mass, color) {
+    this.position = position;
+    this.mass = mass;
+    this.color = color;
+
+    // OBJECTS DETERMINED
+	this.radius = Math.sqrt(this.mass/Math.PI) * 720;
+  }
+  recalculateRadius()
+  {
+  	this.radius = Math.sqrt(this.mass/Math.PI) * 720;
+  }
+}
+
+
+// ----------------------------------------------------------------
+// GLOBALS
+// ----------------------------------------------------------------
+var creature_array = [];
+
+for (var i = 0; i<16; i++)
+{
+	var food = new Creature([randomInt(720), randomInt(720)], 0.0002, [0.3, 1.0, 0.3, 1.0]);
+	creature_array.push(food);
+}
+
+// setup websocket with callbacks
+var ws = new WebSocket('ws://localhost:8080/');
+ws.onopen = function() {
+	console.log('CONNECT');
+};
+ws.onclose = function() {
+	console.log('DISCONNECT');
+};
+ws.onmessage = function(event) {
+	var arr = JSON.parse(event.data);
+	//console.log(event.data);
+
+	for (i in arr)
+	{
+		creature_array[i].position = [arr[i].x*720, arr[i].y*720];
+		creature_array[i].radius = [arr[i].radius]*720;
+		//creature_array[i].recalculateRadius();
+	}	
+};  
+
+// GET JSON OBJECT
+//var inputCreatures = '[{"x": 55, "y": 64, "energy": 3}, {"x": 555,"y": 654,"energy": 3}, {"x": 867,"y": 23,"energy": 3}]';
+//var arr = JSON.parse(inputCreatures);
+
+/*var inputCreatures = '[{"x":0.540332, "y":0.361380,"energy":1.000000}, {"x":0.715168, "y":0.823999,"energy":1.000000}, {"x":0.945944, "y":0.485676,"energy":1.000000}, {"x":0.759485, "y":0.657221,"energy":1.000000}, {"x":0.913731, "y":0.072986,"energy":1.000000}, {"x":0.678250, "y":0.344333,"energy":1.000000}, {"x":0.207778, "y":0.131779,"energy":1.000000}, {"x":0.802057, "y":0.178178,"energy":1.000000}, {"x":0.641291, "y":0.179367,"energy":1.000000}, {"x":0.626269, "y":0.709054,"energy":1.000000}, {"x":0.063129, "y":0.001526,"energy":1.000000}, {"x":0.645619, "y":0.918019,"energy":1.000000}, {"x":0.143086, "y":0.842590,"energy":1.000000}, {"x":0.404431, "y":0.278862,"energy":1.000000}, {"x":0.833393, "y":0.839258,"energy":1.000000}, {"x":0.407166, "y":0.244663,"energy":1.000000}]';
+var arr = JSON.parse(inputCreatures);
+for (i in arr)
+{
+	creature_array[i].position = [arr[i].x*1280, arr[i].y*720];
+
+	//console.log(arr[i].x);
+}*/
+
+function main() {
+	// Get A WebGL context
+	var canvas = document.getElementById("c");
+	var gl = canvas.getContext("webgl2");
+	if (!gl) {
+		return;
+	}
+	// create GLSL shaders, upload the GLSL source, compile the shaders
+	var vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
+	var fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
+
+	// Link the two shaders into a program
+	var program = createProgram(gl, vertexShader, fragmentShader);
+
+	webglUtils.resizeCanvasToDisplaySize(gl.canvas);
+
+	// Tell WebGL how to convert from clip space to pixels
+	gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+
+	// Tell it to use our program (pair of shaders)
+	gl.useProgram(program);
+
+	// ----------------------------------------------------------------
+	// GET ALL THE LOCATIONS
+	// ----------------------------------------------------------------
+	// look up where the vertex data needs to go.
+	var positionAttributeLocation = gl.getAttribLocation(program, "a_position");
+	var uvAttributeLocation = gl.getAttribLocation(program, "a_uv");
+	var resolutionUniformLocation = gl.getUniformLocation(program, "u_resolution");
+	var translationLocation = gl.getUniformLocation(program, "u_translation");
+	var scaleLocation = gl.getUniformLocation(program, "u_scale");
+
+	// look up where the pixel data needs to go
+	var colorLocation = gl.getUniformLocation(program, "u_color");
+	// ----------------------------------------------------------------
+	// BIND THE UNIFORM
+	gl.uniform2f(resolutionUniformLocation, gl.canvas.width, gl.canvas.height);
+	// ----------------------------------------------------------------
+	
+	// Tell the attribute how to get data out of positionBuffer (ARRAY_BUFFER)
+	var size = 2;          // 2 components per iteration
+	var type = gl.FLOAT;   // the data is 32bit floats
+	var normalize = false; // don't normalize the data
+	var stride = 0;        // 0 = move forward size * sizeof(type) each iteration to get the next position
+	var offset = 0;        // start at the beginning of the buffer
+
+	// Create a buffer for positions
+	var positionBuffer = gl.createBuffer();
+	gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+	setRectangle(gl, 1, 1);
+
+	// Create a buffer for uvs
+	var uvBuffer = gl.createBuffer();
+	gl.bindBuffer(gl.ARRAY_BUFFER, uvBuffer);
+	setRectangleUV(gl);
+
+	// ----------------------------------------------------------------
+
+	// First let's make some variables
+	// to hold the translation,
+	var color = [0.3, 0.3, 1.0, 1];
+
+	// UPDATE
+
+	// ----------------------------------------------------------------
+	// CREATURE GENERATION
+	// ----------------------------------------------------------------	
+	// FOOD
+
+
+
+	// Draw scene.
+	function drawScene() {
+		window.requestAnimationFrame(drawScene);
+
+		webglUtils.resizeCanvasToDisplaySize(gl.canvas);
+
+		gl.enable(gl.BLEND);
+		gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+		gl.disable(gl.DEPTH_TEST);
+
+		// Clear the canvas
+		gl.clearColor(0, 0, 0, 0);
+		gl.clear(gl.COLOR_BUFFER_BIT);
+
+		// Tell WebGL how to convert from clip space to pixels
+		gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+
+		// Tell it to use our program (pair of shaders)
+		gl.useProgram(program);
+
+		// POSITION COORDS
+	    gl.enableVertexAttribArray(positionAttributeLocation); 	    // Turn on the position attribute
+	    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);	    // Bind the position buffer.
+	    gl.vertexAttribPointer(
+	        positionAttributeLocation, size, type, normalize, stride, offset)
+
+		// UV COORDS
+		gl.enableVertexAttribArray(uvAttributeLocation);
+		gl.bindBuffer(gl.ARRAY_BUFFER, uvBuffer);
+	    gl.vertexAttribPointer(
+	        uvAttributeLocation, size, type, normalize, stride, offset)
+
+		// Pass in the canvas resolution so we can convert from
+		// pixels to clipspace in the shader
+		gl.uniform2f(resolutionUniformLocation, gl.canvas.width, gl.canvas.height);
+
+		// Set the color.
+
+		// Draw the rectangle.
+		for (var i = 0; i<creature_array.length; i++)
+		{
+			drawCreature(gl, colorLocation, translationLocation, scaleLocation,
+						creature_array[i]);
+		}
+	}
+	
+		window.requestAnimationFrame(drawScene);
+}
+
+main();
+
+// ----------------------------------------------------------------
+// RENDERING FUNCTIONS
+// ----------------------------------------------------------------
+function drawCreature(gl, colorLocation, translationLocation, scaleLocation,
+						creature)
+{
+	gl.uniform4fv(colorLocation, creature.color);
+	gl.uniform2fv(translationLocation, creature.position);
+	gl.uniform1f(scaleLocation, creature.radius);
+
+	var primitiveType = gl.TRIANGLES;
+	var offset = 0;
+	var count = 6;
+	gl.drawArrays(primitiveType, offset, count);
+
+}
+
+// ----------------------------------------------------------------
+// SETTING FUNCTIONS
+// ----------------------------------------------------------------
+function randomInt(range) {
+  return Math.floor(Math.random() * range);
+}
+ 
+function getMousePos(canvas, evt) {
+	var rect = canvas.getBoundingClientRect();
+	return {
+	  x: evt.clientX - rect.left,
+	  y: evt.clientY - rect.top
+	};
+}
+
+// Fills the buffer with the values that define a rectangle.
+function setRectangle(gl, width, height) {
+  var x1 = -width;
+  var x2 = width;
+  var y1 = -height;
+  var y2 = height;
+ 
+  // NOTE: gl.bufferData(gl.ARRAY_BUFFER, ...) will affect
+  // whatever buffer is bound to the `ARRAY_BUFFER` bind point
+  // but so far we only have one buffer. If we had more than one
+  // buffer we'd want to bind that buffer to `ARRAY_BUFFER` first.
+ 
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+     x1, y1,
+     x2, y1,
+     x1, y2,
+     x1, y2,
+     x2, y1,
+     x2, y2]), gl.STATIC_DRAW);
+}
+
+// Fills the buffer with the values that define a rectangle.
+function setRectangleUV(gl) {
+  var x1 = 0.0;
+  var x2 = 1.0;
+  var y1 = 0.0;
+  var y2 = 1.0;
+ 
+  // NOTE: gl.bufferData(gl.ARRAY_BUFFER, ...) will affect
+  // whatever buffer is bound to the `ARRAY_BUFFER` bind point
+  // but so far we only have one buffer. If we had more than one
+  // buffer we'd want to bind that buffer to `ARRAY_BUFFER` first.
+ 
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+     x1, y1,
+     x2, y1,
+     x1, y2,
+     x1, y2,
+     x2, y1,
+     x2, y2]), gl.STATIC_DRAW);
+}
+</script>
+</html>
