@@ -270,6 +270,8 @@ function main() {
 		// ----------------------------------------------------------------
 		// LOGIC
 		// ----------------------------------------------------------------
+				creatureBehaviour(creature_array);
+
 		// CHECK COLLISIONS
 		for (var i = 0; i<creature_array.length; i++)
 		{
@@ -302,7 +304,7 @@ function main() {
 		}
 
 
-		if (creature_array[0].mass <= 40) startNewGame(creature_array, translation, color);
+		//if (creature_array[0].mass <= 40) startNewGame(creature_array, translation, color);
 		// CREATURE CHOOSES WHERE TO MOVE
 		/*var dir = randomInt(100);
 
@@ -316,20 +318,6 @@ function main() {
 		// ----------------------------------------------------------------
 
 		// MOVE ALL THE CRITTERS EXCEPT THE PLAYER
-		let creature_speed=1.0;
-		for (var i = 0; i<creature_array.length; i++)
-		{
-			if (i>=1){
-				// ANGLE BETWEEN
-				let angle=((Math.random()-0.5)*2.0)*Math.PI;
-				let x = Math.cos(angle);
-				let y = Math.sin(angle);
-
-				creature_array[i].position[0] +=creature_speed*x;
-				creature_array[i].position[1] +=creature_speed*y;
-
-			}
-		}
 
 
 		updateTranslation();
@@ -399,6 +387,101 @@ function drawCreature(gl, colorLocation, translationLocation, scaleLocation,
 }
 
 // ----------------------------------------------------------------
+// AI FUNCTIONS
+// ----------------------------------------------------------------
+
+function returnVectorDistance(x, y)
+{
+	return Math.sqrt(x*x+y*y);
+}
+
+function normalizeVector(x, y)
+{
+	let magnitude = returnVectorDistance(x, y);
+	let output = [x/magnitude, y/magnitude];
+	return output;
+}
+
+
+
+function creatureBehaviour(creature_array)
+{
+	let creature_speed=1.0;
+	let distance_tolerance =25;
+
+
+	for (var i = 1; i<creature_array.length; i++)
+	{
+		let pleasure_vector = [0,0];
+		let pain_vector = [0,0];
+		let closest_pleasure = 1000000;
+		let closest_pain = 1000000;
+
+		//let i = 13
+		for (var j = 0; j<creature_array.length; j++)
+		{
+			if (j != i && creature_array[j].mass > 0)
+			{
+				// FIGURE OUT CLOSEST CRITTER THAT'S SMALLER THAN YOU
+				if (creature_array[i].mass > creature_array[j].mass)
+				{
+					// HEADING
+					let x =  creature_array[j].position[0] - creature_array[i].position[0];
+					let y =  creature_array[j].position[1] - creature_array[i].position[1];
+					let distance = returnVectorDistance(x, y);
+					//console.log(output)
+
+					if (distance < closest_pleasure){
+						closest_pleasure = distance;
+
+						let new_position = normalizeVector(x, y);
+						pleasure_vector[0] =creature_speed*new_position[0];
+						pleasure_vector[1] =creature_speed*new_position[1];
+					}
+				} else {
+					// HEADING
+					let x =  creature_array[i].position[0] - creature_array[j].position[0];
+					let y =  creature_array[i].position[1] - creature_array[j].position[1];
+
+					let distance = returnVectorDistance(x, y);
+
+					if (distance < 4*(creature_array[j].radius+creature_array[i].radius)){
+						//if (distance < closest_pain){
+						//	closest_pain = distance;
+
+							pain_vector[0] +=x;
+							pain_vector[1] +=y;
+						//}
+					}
+				}
+			}
+		}
+
+
+		if (pain_vector[0] > 0){
+			let movement_vector = normalizeVector(pain_vector[0], pain_vector[1]);
+
+			creature_array[i].position[0] += movement_vector[0]*creature_speed;
+			creature_array[i].position[1] += movement_vector[1]*creature_speed;
+		} else {
+			creature_array[i].position[0] += pleasure_vector[0];
+			creature_array[i].position[1] += pleasure_vector[1];
+		}
+		/*if (i>=1){
+			// ANGLE BETWEEN
+			let angle=((Math.random()-0.5)*2.0)*Math.PI;
+			let x = Math.cos(angle);
+			let y = Math.sin(angle);
+
+			creature_array[i].position[0] +=creature_speed*x;
+			creature_array[i].position[1] +=creature_speed*y;
+
+		}*/
+	}
+}
+
+
+// ----------------------------------------------------------------
 // LOGIC FUNCTIONS
 // ----------------------------------------------------------------
 function startNewGame(creature_array, translation, color)
@@ -418,14 +501,14 @@ function startNewGame(creature_array, translation, color)
 	// FOOD
 	for (var i = 0; i<32; i++)
 	{
-		var food = new Creature([randomInt(1280), randomInt(720)], 40.0, [0.3, 1.0, 0.3, 1.0]);
+		var food = new Creature([randomInt(1280), randomInt(720)], Math.random()*80+20, [0.3, 1.0, 0.3, 1.0]);
 		creature_array.push(food);
 	}
 
 	// PREDATORS
 	for (var i = 0; i<16; i++)
 	{
-		var predator = new Creature([randomInt(1280), randomInt(720)], 750.0, [1.0, 0.3, 0.3, 1.0]);
+		var predator = new Creature([randomInt(1280), randomInt(720)], Math.random()*500+250, [1.0, 0.3, 0.3, 1.0]);
 		creature_array.push(predator);
 	}		
 }
