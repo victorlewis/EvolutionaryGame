@@ -1,7 +1,7 @@
 <body>
 	<canvas style="background: black;" id="c" width=1280 height=720></canvas>
 </body>
-<hr>
+<hr>  
 <div id="stats">
 	<canvas style="background: black;" id="vision" width=64 height=16></canvas>
 	<br>
@@ -15,7 +15,7 @@
 
 <script>
 "use strict";
-
+"http://68.183.35.40/EvolutionaryGame/old/evolution.html"
 var vertexShaderSource = `#version 300 es
 
 // an attribute is an input (in) to a vertex shader.
@@ -99,11 +99,19 @@ function createProgram(gl, vertexShader, fragmentShader) {
 // ----------------------------------------------------------------
 // LOGIC FUNCTION
 // ----------------------------------------------------------------
+// CREATURE TYPES CAN BE PLANT OR PREDATOR
+// PLANT'S DON'T MOVE, AND JUST GROW NATURALLY
+// TYPE SHOULD BE AN ENUM
+
 class Creature {
-  constructor(position, mass, color) {
+  constructor(position, mass, color, type) {
     this.position = position;
     this.mass = mass;
     this.color = color;
+	this.type = type;
+	this.edible = true;
+
+	this.reproduction_threshold = 200;
 
     // OBJECTS DETERMINED
 	this.radius = Math.sqrt(this.mass/Math.PI);
@@ -128,6 +136,7 @@ var keyS = false;
 var keyD = false;
 
 function main() {
+
 	// Get A WebGL context
 	var canvas = document.getElementById("c");
 	var gl = canvas.getContext("webgl2");
@@ -263,10 +272,13 @@ function main() {
 		startNewGame(creature_array, translation, color);
 	}
 
+
 	// Draw scene.
 	function drawScene() {
 		window.requestAnimationFrame(drawScene);
 
+
+		
 		// ----------------------------------------------------------------
 		// LOGIC
 		// ----------------------------------------------------------------
@@ -275,6 +287,9 @@ function main() {
 		// CHECK COLLISIONS
 		for (var i = 0; i<creature_array.length; i++)
 		{
+			// IGNORE IF PLANT
+			if (creature_array[i].type == 0) continue;
+
 			if (creature_array[i].mass > 0)
 			{
 				// IF COLLISION, EAT THE SMALL ONE AND ADD IT TO YOUR MASS!
@@ -286,6 +301,7 @@ function main() {
 				}
 			}
 		}
+
 
 		// MAKE SURE NO ONE MOVES OUT OF BOUNDS
 		for (var i = 0; i<creature_array.length; i++)
@@ -362,9 +378,45 @@ function main() {
 			drawCreature(gl, colorLocation, translationLocation, scaleLocation,
 						creature_array[i]);
 		}
+
+		
+		// REPRODUCTION
+		for (var i = 0; i<creature_array.length; i++){
+			if (creature_array[i].mass > creature_array[i].reproduction_threshold
+				&& creature_array[i].type == 1)
+			{
+				var reproduction_offset = creature_array[i].radius*2;
+				//var newCreature = new Creature([creature_array[i].position[0]+reproduction_offset, creature_array[i].position[1]]+reproduction_offset, creature_array[i].mass/2, creature_array[i].color, 1);
+				//var newCreature = new Creature([randomInt(1280), randomInt(720)], Math.random()*80+20, [1.0, 0.3, 0.3, 1.0], 1);
+				var newCreature = new Creature([creature_array[i].position[0]+reproduction_offset, creature_array[i].position[1]],  creature_array[i].mass/2, [1.0, 0.3, 0.3, 1.0], 1);
+
+
+				creature_array[i].mass = creature_array[i].mass/2;
+				creature_array[i].recalculateRadius();
+
+				//creature_array.push(newCreature);
+				// FILL UP A DEAD CREATURE'S SPOT IN THE ARRAY IF AVAILABLE
+				var found_spot = false;
+				for (var j = 0; j<creature_array.length; j++)
+				{
+					if (creature_array[j].mass == 0 && creature_array[j].type == 1)
+					{
+						creature_array[j] = newCreature;
+						found_spot = true;
+						break;	
+					}
+				} 
+
+				if (!found_spot) creature_array.push(newCreature);
+
+			}		
+		}
+
 	}
 	
 	window.requestAnimationFrame(drawScene);
+
+
 }
 
 main();
@@ -402,16 +454,45 @@ function normalizeVector(x, y)
 	return output;
 }
 
+// JUST THE INDIVIDUAL PLANT BEHAVIOUR
+function plantBehaviour(creature_array, i)
+{
+	// IF IT'S A PLANT, GROW IT
+	if (creature_array[i].type == 0)
+	{
+		// IF MASS IS SMALLER THAN 100
+		if (creature_array[i].mass < 100)
+		{
+			creature_array[i].mass = creature_array[i].mass + 0.1;
+			creature_array[i].recalculateRadius();
+		}
 
+		// IF IT'S BIG ENOUGH (MASS > 5, MAKE IT EDIBLE)
+		if (creature_array[i].mass > 40)
+		{
+			creature_array[i].edible = true;
+			creature_array[i].color = [0.0, 1.0, 0.0, 1.0];
+		} else {
+			creature_array[i].edible = false;
+			creature_array[i].color = [0.0, 0.4, 0.2, 0.4];
+		}
+	}
+}
 
 function creatureBehaviour(creature_array)
 {
 	let creature_speed=1.0;
 	let distance_tolerance =25;
 
-
 	for (var i = 1; i<creature_array.length; i++)
 	{
+		// if it's a plant, skip
+		if (creature_array[i].type == 0){
+			plantBehaviour(creature_array, i);
+			continue;
+		} 
+
+
 		let pleasure_vector = [0,0];
 		let pain_vector = [0,0];
 		let closest_pleasure = 1000000;
@@ -422,8 +503,8 @@ function creatureBehaviour(creature_array)
 		{
 			if (j != i && creature_array[j].mass > 0)
 			{
-				// FIGURE OUT CLOSEST CRITTER THAT'S SMALLER THAN YOU
-				if (creature_array[i].mass > creature_array[j].mass)
+				// FIGURE OUT CLOSEST CRITTER THAT'S SMALLER THAN YOU AND EDIBLE
+				if (creature_array[i].mass > creature_array[j].mass && creature_array[j].edible)
 				{
 					// HEADING
 					let x =  creature_array[j].position[0] - creature_array[i].position[0];
@@ -493,22 +574,22 @@ function startNewGame(creature_array, translation, color)
 	speed = 0;
 	keyW = false; keyA = false; keyS = false; keyD = false; 
 
-	var player = new Creature(translation, 100.0, color);
+	var player = new Creature(translation, 100.0, color, 1);
 
 	creature_array.push(player);
 	updatePlayerMass(player.mass);
 
-	// FOOD
+	// PLANTS
 	for (var i = 0; i<32; i++)
 	{
-		var food = new Creature([randomInt(1280), randomInt(720)], Math.random()*80+20, [0.3, 1.0, 0.3, 1.0]);
+		var food = new Creature([randomInt(1280), randomInt(720)], Math.random()*80+20, [0.3, 1.0, 0.3, 1.0], 0);
 		creature_array.push(food);
 	}
 
 	// PREDATORS
-	for (var i = 0; i<16; i++)
+	for (var i = 0; i<32; i++)
 	{
-		var predator = new Creature([randomInt(1280), randomInt(720)], Math.random()*500+250, [1.0, 0.3, 0.3, 1.0]);
+		var predator = new Creature([randomInt(1280), randomInt(720)], Math.random()*80+20, [1.0, 0.3, 0.3, 1.0], 1);
 		creature_array.push(predator);
 	}		
 }
@@ -527,7 +608,7 @@ function checkCollision(creature_array, current_index)
 	var current_size = creature_array[current_index].position;
 
 	for (var i = 0; i<creature_array.length; i++)
-	{
+	{		
 		if (i != current_index && creature_array[i].mass > 0) // ignore yourself
 		{
 			var distance = getEuclideanDistance(current_pos[0], current_pos[1],
@@ -539,14 +620,41 @@ function checkCollision(creature_array, current_index)
 }
 
 function handleCollision(creature_array, i, j)
-{
+{	
+	// IF YOU COLLIDE WITH A PLANT THAT'S SMALLER THAN YOU, YOU CONSUME IT
+	// OTHERWISE, BIGGEST CONSUMES!
 	// GET THE BIGGEST
-	if (creature_array[i].mass > creature_array[j].mass) consume(creature_array, j, i);
-	else if (creature_array[j].mass > creature_array[i].mass) consume(creature_array, i, j);
+	if (creature_array[j].type == 0){
+		// IF INEDIBLE, JUST IGNORE
+		if (creature_array[i].edible == false) return;
+		if (creature_array[i].mass > creature_array[j].mass) consume(creature_array, j, i);
+	} else {
+		if (creature_array[i].mass > creature_array[j].mass) consume(creature_array, j, i);
+		else if (creature_array[j].mass > creature_array[i].mass) consume(creature_array, i, j);
+	}
+}
+
+function reproduce(i)
+{
+	if (creature_array[i].mass > creature_array[i].reproduction_threshsold
+		&& creature_array[i].type == 1)
+	{
+		var reproduction_offset = creature_array[i].radius*2;
+		var newCreature = new Creature([creature_array[i].position[0]+reproduction_offset, creature_array[i].position[1]]+reproduction_offset, creature_array[i].mass/2, creature_array[i].color, 1);
+
+		creature_array[i].mass = creature_array[i].mass/2;
+		creature_array[i].recalculateRadius();
+
+		creature_array.push(newCreature);
+
+		console.log("reproduced!")
+	}
 }
 
 function consume(creature_array, consumed, consumer)
 {
+	if (creature_array[consumed].edible == false) return;
+
 	creature_array[consumer].mass = creature_array[consumer].mass + creature_array[consumed].mass;
 	creature_array[consumed].mass = 0;
 
